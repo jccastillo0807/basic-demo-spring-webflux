@@ -5,6 +5,7 @@ import com.webflux.demo.app.models.services.ProductoService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -61,6 +62,39 @@ public class ProductoController {
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(productoCreado)
                 );
+    }
+
+    @PutMapping("/{id}")
+    public Mono<ResponseEntity<Producto>> editar(@RequestBody Producto producto, @PathVariable String id) {
+        return productoService.findById(id)
+                .flatMap(productoAEditar -> {
+
+                    productoAEditar.setNombre(producto.getNombre());
+                    productoAEditar.setPrecio(producto.getPrecio());
+                    productoAEditar.setCategoria(producto.getCategoria());
+
+                    return productoService.save(productoAEditar);
+                })
+                .map(
+                        productoEditado -> ResponseEntity
+                                .created(URI.create(API_PRODUCTOS_BASIC_URI.concat(productoEditado.getId())))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .body(productoEditado)
+                )
+                .defaultIfEmpty(ResponseEntity.notFound().build());
+
+    }
+
+    @DeleteMapping("/{id}")
+    public Mono<ResponseEntity<Void>> eliminarPorId(@PathVariable String id) {
+        return productoService.findById(id)
+                .flatMap(
+                        productoEncontrado -> {
+                            return productoService.delete(productoEncontrado)
+                                    .then(Mono.just(new ResponseEntity<Void>(HttpStatus.NO_CONTENT)));
+                        }
+                )
+                .defaultIfEmpty(new ResponseEntity<Void>(HttpStatus.NOT_FOUND));
     }
 
 
