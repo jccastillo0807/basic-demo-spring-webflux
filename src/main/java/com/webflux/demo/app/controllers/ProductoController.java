@@ -5,31 +5,43 @@ import com.webflux.demo.app.models.services.ProductoService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.io.File;
 import java.net.URI;
 import java.util.Date;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/productos")
 @RequiredArgsConstructor
 public class ProductoController {
 
-    public static final String API_PRODUCTOS_BASIC_URI = "/api/productos/";
-    private final ProductoService productoService;
     private static final Logger LOGGER = LoggerFactory.getLogger(ProductoController.class);
+    public static final String API_PRODUCTOS_BASIC_URI = "/api/productos/";
+    public static final String PATH_UPLOADS = "${config.uploads.path}";
+    public static final String PATH_BASICFINDALL = "/basicfindall";
+    public static final String PATH_RESPONSEENTITYFINDALL = "/responseentityfindall";
 
-    @GetMapping("/basicfindall")
+    @Value(PATH_UPLOADS)
+    private String uploadsPath;
+
+    private final ProductoService productoService;
+
+
+    @GetMapping(PATH_BASICFINDALL)
     public Flux<Producto> listar() {
         return productoService.findAll();
     }
 
-    @GetMapping("/responseentityfindall")
+    @GetMapping(PATH_RESPONSEENTITYFINDALL)
     public Mono<ResponseEntity<Flux<Producto>>> listarResponseENtity() {
         return Mono.just(
                 ResponseEntity.ok()
@@ -97,5 +109,43 @@ public class ProductoController {
                 .defaultIfEmpty(new ResponseEntity<Void>(HttpStatus.NOT_FOUND));
     }
 
+    @PostMapping("/uploads/{id}")
+    public Mono<ResponseEntity<Producto>> upload(@PathVariable String id, @RequestPart FilePart file) {
+        return productoService.findById(id)
+                .flatMap(
+                        productoEncontrado -> {
+                            productoEncontrado.setFoto(UUID.randomUUID().toString() + "-" + file.filename()
+                                    .replace(" ", "")
+                                    .replace(":", "")
+                                    .replace("\\", ""));
+
+                            return file.transferTo(new File(uploadsPath + productoEncontrado.getFoto()))
+                                    .then(productoService.save(productoEncontrado));
+                        }
+                )
+                .map(productoGuardado -> ResponseEntity.ok(productoGuardado))
+                .defaultIfEmpty(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/crear-producto-con-archivo")
+    public Mono<ResponseEntity<Producto>> crearConFoto(Producto producto, @RequestPart FilePart file) {
+
+        if (producto.getCreateAt() == null) {
+            producto.setCreateAt(new Date());
+        }
+
+        producto.setFoto(UUID.randomUUID().toString() + "-" + file.filename()
+                .replace(" ", "")
+                .replace(":", "")
+                .replace("\\", ""));
+
+        return file.transferTo(new File(uploadsPath + producto.getFoto()))
+                .then(productoService.save(producto))
+                .map(productoCreado -> ResponseEntity
+                        .created(URI.create(API_PRODUCTOS_BASIC_URI.concat(productoCreado.getId())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(productoCreado)
+                );
+    }
 
 }
